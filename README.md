@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # AgentFlow OS — Backend
 
 > Autonomous multi-agent AI operating system built with LangGraph, LangChain, Groq, and FastAPI.
@@ -295,3 +296,6 @@ The React frontend connects to this backend via:
 ## License
 
 MIT — build whatever you want with this.
+=======
+# AgentFlow-OS
+>>>>>>> caad266d5fdf1ed4877d8c99f8421bc56b5f5b56
