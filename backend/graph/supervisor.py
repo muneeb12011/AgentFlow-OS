@@ -74,6 +74,21 @@ async def supervisor_node(state: AgentState) -> dict:
         retry     = state["retry_count"],
     )
 
+    # ── Skip replanning if we already have a valid plan with pending tasks ────
+    existing_plan = state.get("plan", [])
+    has_pending = any(t["status"] == "pending" for t in existing_plan)
+    all_done = existing_plan and all(t["status"] in ("done", "failed") for t in existing_plan)
+
+    if existing_plan and has_pending:
+        # Plan exists and has work to do — just return current state, routing handles it
+        log.info("supervisor.reuse_plan", tasks=len(existing_plan), run_id=state["run_id"])
+        return {"updated_at": datetime.utcnow().isoformat()}
+
+    if all_done:
+        # All tasks finished — go to critic (routing handles this)
+        log.info("supervisor.all_done", run_id=state["run_id"])
+        return {"updated_at": datetime.utcnow().isoformat()}
+
     llm, counter = build_llm_with_counter()
 
     # ── Build prompt ──────────────────────────────────────────────────────────

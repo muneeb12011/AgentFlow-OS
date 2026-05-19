@@ -49,8 +49,11 @@ Rules:
 3. Print the final result to stdout — that is what gets captured.
 4. Handle errors gracefully inside your code.
 5. Keep code concise and readable.
-6. If given prior code + error, fix ONLY the root cause. Do not rewrite
-   everything. Return the complete corrected script."""
+6. If given prior code + error, fix ONLY the root cause. Return the complete corrected script.
+7. NEVER use input() or any interactive prompts — code runs non-interactively.
+8. For calculator tasks: define the functions, then demonstrate them with hardcoded examples and print results.
+9. For any demo/example: use hardcoded values, print outputs clearly.
+10. Code must complete and exit on its own within 30 seconds."""
 
 FIX_PROMPT = """Your previous code raised an error.
 
@@ -70,12 +73,10 @@ Output ONLY code — no explanations."""
 
 # ─── Sandbox execution ────────────────────────────────────────────────────────
 
-async def _execute_code(code: str, timeout: int) -> tuple[str, str]:
+def _execute_code_sync(code: str, timeout: int) -> tuple[str, str]:
     """
-    Run `code` in an isolated subprocess.
-
-    Returns:
-        (stdout, stderr) — both are strings. stderr is empty on success.
+    Run code in a subprocess synchronously (Windows compatible).
+    Returns (stdout, stderr).
     """
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".py", delete=False, encoding="utf-8"
@@ -84,30 +85,36 @@ async def _execute_code(code: str, timeout: int) -> tuple[str, str]:
         script_path = f.name
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable, script_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        import subprocess as sp
+        result = sp.run(
+            [sys.executable, script_path],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            encoding="utf-8",
+            errors="replace",
         )
-        try:
-            stdout_b, stderr_b = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout
-            )
-        except asyncio.TimeoutError:
-            proc.kill()
-            return "", f"TimeoutError: code exceeded {timeout}s execution limit"
-
-        stdout = stdout_b.decode("utf-8", errors="replace").strip()
-        stderr = stderr_b.decode("utf-8", errors="replace").strip()
-
-        # Non-zero exit but no stderr — capture stdout as error context
-        if proc.returncode != 0 and not stderr:
-            stderr = f"Process exited with code {proc.returncode}"
-
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
+        if result.returncode != 0 and not stderr:
+            stderr = f"Process exited with code {result.returncode}"
         return stdout, stderr
-
+    except sp.TimeoutExpired:
+        return "", f"TimeoutError: code exceeded {timeout}s execution limit"
+    except Exception as e:
+        return "", f"Execution error: {e}"
     finally:
         Path(script_path).unlink(missing_ok=True)
+
+
+async def _execute_code(code: str, timeout: int) -> tuple[str, str]:
+    """
+    Run code in executor thread (non-blocking, Windows compatible).
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None, _execute_code_sync, code, timeout
+    )
 
 
 # ─── Node function ────────────────────────────────────────────────────────────

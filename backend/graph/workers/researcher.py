@@ -7,6 +7,7 @@ No AgentExecutor needed. Uses the modern .bind_tools() approach.
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 
 import structlog
@@ -23,13 +24,17 @@ from backend.graph.state import AgentState, RunStatus, ToolCall, WorkerType
 log      = structlog.get_logger(__name__)
 settings = get_settings()
 
+# Force set env var — langchain_tavily reads os.environ directly
+# and ignores the api_key parameter in newer versions
+if settings.tavily_api_key:
+    os.environ["TAVILY_API_KEY"] = settings.tavily_api_key
+
 
 def _build_tools():
     tools = []
     if settings.tavily_api_key:
         tools.append(
             TavilySearch(
-                api_key      = settings.tavily_api_key,
                 max_results  = settings.max_search_results,
                 search_depth = "advanced",
             )

@@ -1,52 +1,114 @@
-<<<<<<< HEAD
-# AgentFlow OS — Backend
+<div align="center">
 
-> Autonomous multi-agent AI operating system built with LangGraph, LangChain, Groq, and FastAPI.
+<br/>
+
+```
+    ╔═══════════════════════════════════════════════════╗
+    ║   █████╗  ██████╗ ███████╗███╗   ██╗████████╗   ║
+    ║  ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝   ║
+    ║  ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║      ║
+    ║  ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║      ║
+    ║  ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║      ║
+    ║  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝      ║
+    ║              F  L  O  W  ·  O  S                 ║
+    ╚═══════════════════════════════════════════════════╝
+```
+
+**Autonomous Multi-Agent AI Operating System**
+
+*Give it a goal. Watch it think, plan, execute, and self-heal — all on its own.*
+
+<br/>
+
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![LangGraph](https://img.shields.io/badge/LangGraph-latest-FF6B35?style=flat-square)](https://langchain-ai.github.io/langgraph/)
+[![Groq](https://img.shields.io/badge/Groq-llama--3.3--70b-F55036?style=flat-square)](https://groq.com)
+[![License](https://img.shields.io/badge/License-MIT-22C55E?style=flat-square)](LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
+
+<br/>
+
+</div>
 
 ---
 
-## What this is
+## What is AgentFlow OS?
 
 AgentFlow OS is a **production-grade autonomous agent system**. You give it a goal. It plans, delegates to specialist workers, self-heals errors, reviews quality, and returns a polished answer — all orchestrated by a LangGraph StateGraph.
 
-This is not a chatbot wrapper. This is a real distributed AI system with:
+> **This is not a chatbot wrapper.** This is a real distributed AI system with coordinated specialist agents, live streaming, and observable internals.
 
-- **Multi-agent orchestration** via LangGraph
-- **Self-healing Coder** that writes, runs, and fixes Python automatically
-- **Researcher** using Tavily, Wikipedia, and ArXiv
-- **Critic** quality gate with retry loop
-- **Writer** that synthesises everything into a clean response
-- **JWT auth** and **multi-tenancy** from day one
-- **SSE streaming** so the UI sees every step live
-- **LangSmith tracing** for full observability
-- **Structured JSON logging** with structlog
-- **Docker Compose** for one-command startup
+<br/>
 
----
+## ⚡ Feature Highlights
 
-## Architecture
+| Feature | Description |
+|---|---|
+| 🧠 **Multi-Agent Orchestration** | LangGraph StateGraph with a Supervisor that routes tasks dynamically |
+| 🔧 **Self-Healing Coder** | Writes Python, runs it, catches errors, and fixes itself — up to 4 retries |
+| 🔍 **Research Agent** | Pulls from Tavily, Wikipedia, and ArXiv in a ReAct loop |
+| 📊 **Analyst Agent** | SQL queries, pandas data analysis, and chart generation |
+| ✅ **Critic Quality Gate** | Scores output 0–1; retries the full pipeline if below threshold |
+| ✏️ **Writer Agent** | Synthesises all worker outputs into a clean, coherent final response |
+| 📡 **SSE Streaming** | Every step streams live to the frontend via Server-Sent Events |
+| 🔐 **JWT + Multi-Tenancy** | Auth and tenant isolation from day one |
+| 🔭 **LangSmith Tracing** | Full observability: prompts, tool calls, token counts, latency |
+| 📋 **Structured Logging** | JSON logs with `structlog` for every agent action |
+| 🐳 **Docker Compose** | One command starts the entire stack |
 
-```
-User Request
-     │
-     ▼
-FastAPI (JWT auth · rate limit · tenant resolver)
-     │
-     ▼  SSE stream back to client ◄──────────────────────────┐
-LangGraph StateGraph                                          │
-     │                                                        │
-  Supervisor ──► Researcher (Tavily · Wikipedia · ArXiv)     │
-             ──► Coder      (write → exec → fix loop)  ──────┤
-             ──► Analyst    (SQL · pandas · charts)          │
-             ──► Critic     (score 0–1 · retry if < 0.7)     │
-             ──► Writer     (synthesise final answer)   ──────┘
-```
-
-Every node reads from and writes back to a shared `AgentState` TypedDict. LangGraph merges updates using Annotated reducers.
+<br/>
 
 ---
 
-## Project structure
+## 🏗️ Architecture
+
+```
+                        ┌─────────────────────────────┐
+   User Request  ──────►│  FastAPI                     │
+                        │  JWT Auth · Rate Limit        │
+                        │  Tenant Resolver              │
+                        └──────────────┬──────────────┘
+                                       │
+                          SSE stream ◄─┤
+                                       ▼
+                        ┌─────────────────────────────┐
+                        │   LangGraph StateGraph       │
+                        │                              │
+                        │   ┌──────────────────────┐  │
+                        │   │      Supervisor       │  │
+                        │   │  (Plans & Routes)     │  │
+                        │   └──────┬───────────────┘  │
+                        │          │                   │
+                        │    ┌─────┴──────┐            │
+                        │    ▼            ▼            │
+                        │  ┌──────┐  ┌────────┐        │
+                        │  │Resear│  │ Coder  │        │
+                        │  │cher  │  │write → │        │
+                        │  │Tavily│  │exec →  │        │
+                        │  │Wiki  │  │fix loop│        │
+                        │  │ArXiv │  └────────┘        │
+                        │  └──────┘                    │
+                        │       │                      │
+                        │  ┌────▼──────────┐           │
+                        │  │    Critic     │           │
+                        │  │  score 0–1   │           │
+                        │  │ < 0.7 → retry │           │
+                        │  └────┬──────────┘           │
+                        │       │ ≥ 0.7                │
+                        │  ┌────▼──────────┐           │
+                        │  │    Writer     │──────────►│ Final Answer
+                        │  └───────────────┘           │
+                        └─────────────────────────────┘
+```
+
+Every node reads from and writes back to a shared `AgentState` TypedDict. LangGraph merges updates using Annotated reducers — no manual state passing.
+
+<br/>
+
+---
+
+## 📁 Project Structure
 
 ```
 backend/
@@ -69,11 +131,13 @@ backend/
         └── critic_writer.py     # Quality critic + final writer
 ```
 
+<br/>
+
 ---
 
-## Quickstart
+## 🚀 Quickstart
 
-### 1. Clone and install
+### 1 — Clone & Install
 
 ```bash
 git clone https://github.com/yourname/agentflow-os
@@ -85,13 +149,13 @@ source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Set up environment variables
+### 2 — Configure Environment
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and fill in:
+Fill in your `.env`:
 
 ```env
 GROQ_API_KEY=your_groq_api_key_here
@@ -100,79 +164,93 @@ LANGCHAIN_API_KEY=your_langsmith_key_here   # optional but recommended
 ```
 
 **Get your free API keys:**
-- Groq: https://console.groq.com (free, 500+ tokens/sec)
-- Tavily: https://tavily.com (free tier available)
-- LangSmith: https://smith.langchain.com (free tier)
 
-### 3. Run the server
+| Service | URL | Notes |
+|---|---|---|
+| Groq | https://console.groq.com | Free — 500+ tokens/sec |
+| Tavily | https://tavily.com | Free tier available |
+| LangSmith | https://smith.langchain.com | Free tier |
+
+### 3 — Start the Server
 
 ```bash
 uvicorn backend.main:app --reload --port 8000
 ```
 
-API docs available at: http://localhost:8000/api/docs
+Docs live at → **http://localhost:8000/api/docs**
 
-### 4. Test it
+### 4 — Run Your First Task
 
 ```bash
-# Get a dev token
+# Step 1: Get a dev token
 curl -X POST http://localhost:8000/api/auth/token \
   -H "Content-Type: application/json" \
   -d '{"email": "dev@test.com", "tenant_id": "default"}'
 
-# Run a task (replace TOKEN with the access_token from above)
+# Step 2: Submit a goal
 curl -X POST http://localhost:8000/api/runs \
-  -H "Authorization: Bearer TOKEN" \
+  -H "Authorization: Bearer <YOUR_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{"goal": "Write a Python function to find prime numbers and test it"}'
 ```
 
+<br/>
+
 ---
 
-## Docker Compose (recommended)
+## 🐳 Docker Compose (Recommended)
 
 ```bash
 # From the project root
 docker compose up --build
 ```
 
-This starts:
-- FastAPI backend on port 8000
-- Postgres on port 5432
-- Redis on port 6379
+Starts the full stack:
+
+| Service | Port |
+|---|---|
+| FastAPI Backend | `8000` |
+| PostgreSQL | `5432` |
+| Redis | `6379` |
+
+<br/>
 
 ---
 
-## Environment variables reference
+## 🔧 Environment Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `GROQ_API_KEY` | ✅ | — | Groq LLM API key |
 | `TAVILY_API_KEY` | ✅ | — | Web search API key |
+| `JWT_SECRET_KEY` | ✅ prod | `change-me` | Sign JWTs — generate with `openssl rand -hex 32` |
 | `LANGCHAIN_API_KEY` | ⬜ | — | LangSmith tracing |
 | `LANGCHAIN_TRACING_V2` | ⬜ | `true` | Enable tracing |
 | `LANGCHAIN_PROJECT` | ⬜ | `agentflow-os` | Project name in LangSmith |
-| `JWT_SECRET_KEY` | ✅ prod | `change-me` | Sign JWTs — use `openssl rand -hex 32` |
 | `DATABASE_URL` | ⬜ | local postgres | Postgres connection string |
 | `REDIS_URL` | ⬜ | local redis | Redis connection string |
 | `GROQ_MODEL` | ⬜ | `llama-3.3-70b-versatile` | Model name |
 | `MAX_RETRIES` | ⬜ | `3` | Global critic retry limit |
-| `CODE_EXEC_TIMEOUT_S` | ⬜ | `30` | Sandbox execution timeout |
-| `CRITIC_PASS_THRESHOLD` | ⬜ | `0.7` | Score below this triggers retry |
+| `CODE_EXEC_TIMEOUT_S` | ⬜ | `30` | Sandbox execution timeout (seconds) |
+| `CRITIC_PASS_THRESHOLD` | ⬜ | `0.7` | Score below this triggers a retry |
 | `DEBUG` | ⬜ | `false` | Verbose agent logging |
+
+<br/>
 
 ---
 
-## API reference
+## 📡 API Reference
 
 ### `POST /api/auth/token`
-Get a JWT for development.
+Issue a JWT for development use.
 ```json
 { "email": "you@example.com", "tenant_id": "your-org" }
 ```
 
+---
+
 ### `POST /api/runs`
-Run a task synchronously (waits for full completion).
+Run a task synchronously (blocks until complete).
 ```json
 {
   "goal": "Research the latest papers on LLM agents and summarise them",
@@ -181,67 +259,91 @@ Run a task synchronously (waits for full completion).
 }
 ```
 
-### `GET /api/runs/stream?goal=<your goal>`
-SSE streaming endpoint. Connect with `EventSource` in React.
+---
 
-Events:
-- `node_update` — fires each time a LangGraph node completes
-- `run_complete` — final answer + token usage
-- `error` — if something goes wrong
+### `GET /api/runs/stream?goal=<your goal>`
+SSE streaming endpoint. Connect from React with `EventSource`.
+
+| Event | Description |
+|---|---|
+| `node_update` | Fires each time a LangGraph node completes |
+| `run_complete` | Final answer + token usage |
+| `error` | If something goes wrong |
+
+---
 
 ### `GET /api/runs/{run_id}`
-Retrieve the full state of a completed run.
+Retrieve full state of a completed run.
 
 ### `GET /health`
 Health check.
 
----
-
-## How the self-healing Coder works
-
-This is the most impressive part of the system. When the Supervisor assigns a coding task:
-
-1. **Write** — Coder asks Groq to write Python for the task
-2. **Execute** — runs it in an isolated subprocess with a timeout
-3. **Check** — if stderr is empty, done ✅
-4. **Fix** — if there's an error, sends `(code + error)` back to Groq and asks for a fix
-5. **Repeat** — up to 4 fix attempts before giving up
-
-The entire loop is inside `coder_node`. LangGraph never needs to re-route for individual code errors — the fix loop is self-contained. The retry loop at the graph level (via the Critic) is for *quality*, not for syntax errors.
+<br/>
 
 ---
 
-## How the Critic retry loop works
+## 🔁 How the Self-Healing Coder Works
+
+The most impressive part of the system. When the Supervisor assigns a coding task:
 
 ```
-Supervisor plans tasks
-       ↓
-Workers execute (researcher / coder / analyst)
-       ↓
-Critic scores outputs 0.0 – 1.0
-       ↓
-  score ≥ 0.7 → Writer (final answer)
-  score < 0.7 → back to Supervisor (re-plan with feedback)
-  max retries hit → Writer anyway (best-effort)
+  ┌─────────────────────────────────────────┐
+  │  1. WRITE  — Groq generates Python       │
+  │  2. EXEC   — Runs in isolated subprocess │
+  │  3. CHECK  — stderr empty? ✅ Done       │
+  │  4. FIX    — Sends (code + error) back   │
+  │             to Groq for correction       │
+  │  5. REPEAT — Up to 4 fix attempts        │
+  └─────────────────────────────────────────┘
 ```
 
-The routing is done by `route_after_critic()` in `supervisor.py` — a pure function that LangGraph calls as a conditional edge.
+The fix loop is entirely self-contained inside `coder_node`. LangGraph never re-routes for syntax errors — that's handled internally. The graph-level retry (via the Critic) is reserved for **quality**, not correctness.
+
+<br/>
 
 ---
 
-## LangSmith observability
+## ✅ How the Critic Retry Loop Works
 
-When `LANGCHAIN_API_KEY` is set, every run is fully traced in LangSmith:
-- Every LLM call with prompt + response
-- Every tool invocation
+```
+  Supervisor plans tasks
+         │
+         ▼
+  Workers execute
+  (researcher · coder · analyst)
+         │
+         ▼
+  Critic scores 0.0 → 1.0
+         │
+         ├── score ≥ 0.7 ──► Writer (final answer) ✅
+         │
+         ├── score < 0.7 ──► Back to Supervisor (re-plan with feedback) 🔄
+         │
+         └── max retries hit ──► Writer anyway (best-effort) ⚠️
+```
+
+Routing is handled by `route_after_critic()` in `supervisor.py` — a pure function used as a conditional edge in LangGraph.
+
+<br/>
+
+---
+
+## 🔭 LangSmith Observability
+
+When `LANGCHAIN_API_KEY` is set, every run is fully traced:
+
+- Every LLM call with full prompt and response
+- Every tool invocation and result
 - Token counts and latency per step
-- The full execution graph
+- The full execution graph, visualised
 
-Open https://smith.langchain.com after running a task to see it.
+→ View traces at **https://smith.langchain.com**
+
+<br/>
 
 ---
 
-## Extending the system
+## 🧩 Extending the System
 
 ### Add a new tool to the Researcher
 
@@ -251,51 +353,74 @@ from langchain_community.tools import YourNewTool
 tools.append(YourNewTool(...))
 ```
 
-### Add a new worker
+### Add a new worker agent
 
-1. Create `backend/graph/workers/your_worker.py` with an `async def your_worker_node(state)` function
-2. Add it to `pipeline.py`: `builder.add_node("your_worker", your_worker_node)`
-3. Add routing in `supervisor.py`: add `"your_worker"` to the conditional edges map
-4. Add `"your_worker"` to `WorkerType` enum in `state.py`
+```python
+# 1. Create your worker
+# backend/graph/workers/your_worker.py
+async def your_worker_node(state: AgentState) -> AgentState:
+    ...
 
-### Swap LLM provider
+# 2. Register it in pipeline.py
+builder.add_node("your_worker", your_worker_node)
 
-Change one file — `backend/core/llm.py`. Everything else stays the same.
+# 3. Add routing in supervisor.py
+# Add "your_worker" to the conditional edges map
+
+# 4. Add to WorkerType enum in state.py
+```
+
+### Swap the LLM provider
+
+Change one file: **`backend/core/llm.py`** — everything else stays the same.
+
+<br/>
 
 ---
 
-## What to build next (frontend)
+## 🖥️ Frontend Integration
 
 The React frontend connects to this backend via:
 
-- `POST /api/runs/stream` → `EventSource` for live streaming
-- `Zustand` store that updates on every `node_update` event
-- `React Flow` to visualise the live agent graph
+| Concern | Implementation |
+|---|---|
+| Live streaming | `EventSource` → `GET /api/runs/stream` |
+| State management | `Zustand` store, updated on every `node_update` event |
+| Agent graph visualisation | `React Flow` rendering the live execution graph |
+
+<br/>
 
 ---
 
-## Tech stack
+## 🛠️ Tech Stack
 
 | Layer | Technology |
 |---|---|
-| API framework | FastAPI + Uvicorn |
-| Agent orchestration | LangGraph |
-| Agent toolkit | LangChain |
-| LLM | Groq (llama-3.3-70b) |
-| Web search | Tavily |
-| Auth | JWT (python-jose) |
-| Logging | structlog |
+| API Framework | FastAPI + Uvicorn |
+| Agent Orchestration | LangGraph |
+| Agent Toolkit | LangChain |
+| LLM Provider | Groq (`llama-3.3-70b-versatile`) |
+| Web Search | Tavily |
+| Authentication | JWT (`python-jose`) |
+| Logging | structlog (structured JSON) |
 | Observability | LangSmith |
 | Database | PostgreSQL + SQLAlchemy |
-| Cache / events | Redis |
-| Vector store | FAISS |
+| Cache / Events | Redis |
+| Vector Store | FAISS |
 | Containerisation | Docker Compose |
+
+<br/>
 
 ---
 
-## License
+## 📄 License
 
 MIT — build whatever you want with this.
-=======
-# AgentFlow-OS
->>>>>>> caad266d5fdf1ed4877d8c99f8421bc56b5f5b56
+
+---
+
+<div align="center">
+
+*Built with LangGraph · Groq · FastAPI*
+
+</div>

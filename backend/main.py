@@ -27,7 +27,7 @@ from jose import JWTError, jwt
 from pydantic import BaseModel
 
 from backend.core.config import get_settings
-from backend.graph.pipeline import graph
+from backend.graph.pipeline import build_graph_instance
 from backend.graph.state import RunStatus, make_initial_state
 
 log      = structlog.get_logger(__name__)
@@ -98,10 +98,14 @@ async def get_current_user(request: Request) -> TokenData:
         detail      = "Could not validate credentials",
         headers     = {"WWW-Authenticate": "Bearer"},
     )
+    # Check Authorization header first, then query param (for EventSource)
     auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise credentials_exception
-    token = auth_header[7:]
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+    else:
+        token = request.query_params.get("token", "")
+        if not token:
+            raise credentials_exception
     try:
         payload   = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         user_id   = payload.get("user_id")
@@ -145,40 +149,44 @@ def _sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-async def _stream_graph(initial_state: dict, config: dict) -> AsyncIterator[str]:
+async def _stream_graph(initial_state: dict) -> AsyncIterator[str]:
     """
     Stream LangGraph execution events as SSE.
-    Each state update is sent to the client in real time.
+    Builds a fresh graph per request to avoid stale checkpointer state.
     """
+    g = build_graph_instance()
+    final_state = {}
     try:
-        async for event in graph.astream(initial_state, config=config):
+        async for event in g.astream(initial_state):
             for node_name, node_output in event.items():
+                final_state = node_output
+                messages = []
+                for m in node_output.get("messages", []):
+                    try:
+                        messages.append({"content": m.content, "type": m.type})
+                    except Exception:
+                        pass
                 yield _sse_event("node_update", {
-                    "node":       node_name,
-                    "status":     node_output.get("status", ""),
-                    "updated_at": node_output.get("updated_at", ""),
-                    "messages": [
-                        {"content": m.content, "type": m.type}
-                        for m in node_output.get("messages", [])
-                    ],
+                    "node":        node_name,
+                    "status":      node_output.get("status", ""),
+                    "updated_at":  node_output.get("updated_at", ""),
+                    "messages":    messages,
                     "token_usage": node_output.get("token_usage"),
                 })
 
-        # Fetch final state from checkpointer
-        final = await graph.aget_state(config)
-        values = final.values if hasattr(final, "values") else {}
-
         yield _sse_event("run_complete", {
-            "run_id":      values.get("run_id"),
-            "status":      values.get("status"),
-            "answer":      values.get("final_answer"),
-            "token_usage": values.get("token_usage"),
-            "errors":      values.get("errors", []),
+            "run_id":      initial_state.get("run_id"),
+            "status":      final_state.get("status", "done"),
+            "answer":      final_state.get("final_answer"),
+            "token_usage": final_state.get("token_usage"),
+            "errors":      final_state.get("errors", []),
         })
 
     except Exception as exc:
-        log.error("stream.error", error=str(exc))
-        yield _sse_event("error", {"message": str(exc)})
+        import traceback
+        tb = traceback.format_exc()
+        log.error("stream.error", error=str(exc), traceback=tb)
+        yield _sse_event("error", {"message": str(exc), "detail": tb[-500:]})
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -228,10 +236,9 @@ async def create_run(
     )
     initial_state["run_id"] = run_id
 
-    config = {"configurable": {"thread_id": run_id}}
-
+    g = build_graph_instance()
     try:
-        final_state = await graph.ainvoke(initial_state, config=config)
+        final_state = await g.ainvoke(initial_state)
     except Exception as exc:
         log.error("run.fatal", error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))
@@ -259,6 +266,7 @@ async def create_run(
 async def stream_run(
     goal:         str,
     session_id:   str | None = None,
+    token:        str | None = None,
     current_user: TokenData  = Depends(get_current_user),
 ):
     """
@@ -280,12 +288,10 @@ async def stream_run(
     )
     initial_state["run_id"] = run_id
 
-    config = {"configurable": {"thread_id": run_id}}
-
     log.info("stream.start", run_id=run_id, goal=goal[:80])
 
     return StreamingResponse(
-        _stream_graph(initial_state, config),
+        _stream_graph(initial_state),
         media_type = "text/event-stream",
         headers    = {
             "Cache-Control":       "no-cache",
@@ -301,26 +307,8 @@ async def get_run(
     current_user: TokenData = Depends(get_current_user),
 ):
     """Retrieve final state of a completed run from the checkpointer."""
-    config = {"configurable": {"thread_id": run_id}}
     try:
-        state = await graph.aget_state(config)
-        if not state or not state.values:
-            raise HTTPException(status_code=404, detail="Run not found")
-        v = state.values
-        # Enforce tenant isolation
-        if v.get("tenant_id") != current_user.tenant_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-        return {
-            "run_id":      v.get("run_id"),
-            "status":      v.get("status"),
-            "answer":      v.get("final_answer"),
-            "plan":        v.get("plan", []),
-            "tool_calls":  v.get("tool_calls", []),
-            "token_usage": v.get("token_usage"),
-            "errors":      v.get("errors", []),
-            "started_at":  v.get("started_at"),
-            "updated_at":  v.get("updated_at"),
-        }
+        raise HTTPException(status_code=404, detail="Run history not available in stateless mode")
     except HTTPException:
         raise
     except Exception as exc:
