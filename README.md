@@ -416,6 +416,11 @@ The React frontend connects to this backend via:
 ## 📄 License
 
 MIT — build whatever you want with this.
+<<<<<<< HEAD
+=======
+muuneeb'''
+
+>>>>>>> c3915c4ceeb961be08014414944bf4821e2c618e
 
 ---
 
@@ -423,4 +428,8 @@ MIT — build whatever you want with this.
 
 *Built with LangGraph · Groq · FastAPI*
 
+<<<<<<< HEAD
 </div>
+=======
+</div>
+>>>>>>> c3915c4ceeb961be08014414944bf4821e2c618e
