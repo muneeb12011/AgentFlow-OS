@@ -1,5 +1,5 @@
 """
-AgentFlow OS â€” LLM Factory
+AgentFlow OS — LLM Factory
 ============================
 One place to build the LLM client. Swap Groq for any provider here
 without touching a single agent file.
@@ -77,7 +77,7 @@ def build_llm(
 
 def build_llm_with_counter() -> tuple[ChatGroq, TokenCountingCallback]:
     """
-    Convenience helper â€” returns (llm, counter) so callers can
+    Convenience helper — returns (llm, counter) so callers can
     read token usage after the run completes.
 
     Usage::

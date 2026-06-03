@@ -1,4 +1,4 @@
-"""
+﻿"""
 AgentFlow OS — Critic + Writer Workers
 =========================================
 Critic:  scores all worker outputs 0.0–1.0 and writes feedback.
@@ -16,8 +16,8 @@ from datetime import datetime
 import structlog
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from backend.core.llm import build_llm_with_counter
-from backend.graph.state import AgentState, RunStatus, WorkerType
+from core.llm import build_llm_with_counter
+from graph.state import AgentState, RunStatus, WorkerType
 
 log = structlog.get_logger(__name__)
 

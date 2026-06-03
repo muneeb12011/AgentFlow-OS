@@ -1,3 +1,5 @@
+import AuthPage from "./pages/AuthPage";
+import Dashboard from "./pages/Dashboard";
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
 import {
@@ -146,7 +148,7 @@ function Nav({ onLaunch, onDocs }: { onLaunch: () => void; onDocs: () => void })
   );
 }
 
-function Hero({ onLaunch }: { onLaunch: () => void }) {
+function Hero({ onLaunch, onDocs }: { onLaunch: () => void; onDocs: () => void }) {
   const { scrollY } = useScroll();
   const y1 = useTransform(scrollY, [0, 600], [0, -80]);
   const opacity = useTransform(scrollY, [0, 400], [1, 0]);
@@ -184,7 +186,7 @@ function Hero({ onLaunch }: { onLaunch: () => void }) {
               <span className="absolute inset-0 shine pointer-events-none" />
               <TermIcon className="w-4 h-4" /> Open terminal <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
             </button>
-            <button className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl border border-white/15 bg-white/[0.02] text-white font-mono text-xs uppercase tracking-[0.14em] hover:bg-white/[0.05] hover:border-white/25 hover:-translate-y-0.5 transition-all">
+            <button onClick={onDocs} className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl border border-white/15 bg-white/[0.02] text-white font-mono text-xs uppercase tracking-[0.14em] hover:bg-white/[0.05] hover:border-white/25 hover:-translate-y-0.5 transition-all">
               Read the docs <ArrowRight className="w-4 h-4" />
             </button>
           </motion.div>
@@ -813,25 +815,50 @@ function Footer() {
 
 export default function App() {
   const [page, setPage] = useState("home");
+
+  // Check if already logged in
+  useEffect(() => {
+    const auth = localStorage.getItem("agentflow-auth");
+    if (auth) {
+      try {
+        const parsed = JSON.parse(auth);
+        if (parsed?.state?.isAuthenticated) setPage("dashboard");
+      } catch {}
+    }
+  }, []);
+
+  const goToAuth = () => setPage("auth");
+  const goToDashboard = () => setPage("dashboard");
+
   const goTerm = () => {
     if (page !== "home") setPage("home");
     setTimeout(() => { document.getElementById("terminal")?.scrollIntoView({ behavior: "smooth" }); }, 50);
   };
+
+  if (page === "auth") {
+    return <AuthPage onSuccess={goToDashboard} />;
+  }
+
+  if (page === "dashboard") {
+    return <Dashboard />;
+  }
+
   if (page === "docs") {
     return (
       <div className="relative">
         <div className="grain" />
-        <Nav onLaunch={goTerm} onDocs={() => setPage("home")} />
+        <Nav onLaunch={goToAuth} onDocs={() => setPage("home")} />
         <Docs onBack={() => { setPage("home"); window.scrollTo(0, 0); }} />
         <Footer />
       </div>
     );
   }
+
   return (
     <div className="relative bg-[#050505] overflow-x-hidden">
       <div className="grain" />
-      <Nav onLaunch={goTerm} onDocs={() => { setPage("docs"); window.scrollTo(0, 0); }} />
-      <Hero onLaunch={goTerm} />
+      <Nav onLaunch={goToAuth} onDocs={() => { setPage("docs"); window.scrollTo(0, 0); }} />
+      <Hero onLaunch={goToAuth} onDocs={() => { setPage("docs"); window.scrollTo(0, 0); }} />
       <Ticker />
       <HowItWorks />
       <AgentsSection />

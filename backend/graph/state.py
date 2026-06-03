@@ -1,4 +1,4 @@
-"""
+﻿"""
 AgentFlow OS — Shared LangGraph State
 ======================================
 This TypedDict is the single source of truth that flows through

@@ -17,9 +17,9 @@ from langchain_community.utilities.arxiv import ArxivAPIWrapper
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_tavily import TavilySearch
 
-from backend.core.config import get_settings
-from backend.core.llm import build_llm_with_counter
-from backend.graph.state import AgentState, RunStatus, ToolCall, WorkerType
+from core.config import get_settings
+from core.llm import build_llm_with_counter
+from graph.state import AgentState, RunStatus, ToolCall, WorkerType
 
 log      = structlog.get_logger(__name__)
 settings = get_settings()
