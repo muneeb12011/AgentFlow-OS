@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 
 export interface Message {
   role: "user" | "agent";
@@ -35,12 +35,14 @@ export const useHistory = create<HistoryState>()(
       activeChatId: null,
 
       createChat: (userId, firstMessage) => {
-        const id = crypto.randomUUID();
-        const title = firstMessage.length > 40 ? firstMessage.slice(0, 40) + "…" : firstMessage;
+        const id    = crypto.randomUUID();
+        const title = firstMessage.length > 45
+          ? firstMessage.slice(0, 45) + "…"
+          : firstMessage;
         const chat: Chat = {
           id,
           title,
-          messages: [],
+          messages:  [],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           userId,
@@ -63,20 +65,32 @@ export const useHistory = create<HistoryState>()(
 
       deleteChat: (chatId) => {
         set((s) => ({
-          chats: s.chats.filter((c) => c.id !== chatId),
+          chats:        s.chats.filter((c) => c.id !== chatId),
           activeChatId: s.activeChatId === chatId ? null : s.activeChatId,
         }));
       },
 
       clearAll: (userId) => {
         set((s) => ({
-          chats: s.chats.filter((c) => c.userId !== userId),
+          chats:        s.chats.filter((c) => c.userId !== userId),
           activeChatId: null,
         }));
       },
 
-      getUserChats: (userId) => get().chats.filter((c) => c.userId === userId),
+      getUserChats: (userId) => {
+        return get().chats
+          .filter((c) => c.userId === userId)
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      },
     }),
-    { name: "agentflow-history" }
+    {
+      name:    "agentflow-history",
+      storage: createJSONStorage(() => localStorage),
+      // Only persist chats and activeChatId
+      partialize: (state) => ({
+        chats:        state.chats,
+        activeChatId: state.activeChatId,
+      }),
+    }
   )
 );

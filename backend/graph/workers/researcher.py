@@ -1,10 +1,6 @@
-﻿"""
-AgentFlow OS — Researcher Worker
-===================================
-Uses direct LLM calls with tool binding — compatible with langchain 1.x.
-No AgentExecutor needed. Uses the modern .bind_tools() approach.
 """
-
+AgentFlow OS — Researcher Worker (Enhanced)
+"""
 from __future__ import annotations
 
 import os
@@ -24,39 +20,48 @@ from graph.state import AgentState, RunStatus, ToolCall, WorkerType
 log      = structlog.get_logger(__name__)
 settings = get_settings()
 
-# Force set env var — langchain_tavily reads os.environ directly
-# and ignores the api_key parameter in newer versions
 if settings.tavily_api_key:
     os.environ["TAVILY_API_KEY"] = settings.tavily_api_key
+
+
+RESEARCHER_SYSTEM = """You are an expert research analyst inside AgentFlow OS — an autonomous AI system.
+
+Your mission: gather comprehensive, accurate, and well-structured information to fully answer the assigned task.
+
+## How to work:
+1. Break down the task into specific search queries
+2. Use multiple tools — search broadly, then dig deep
+3. Cross-reference information from different sources
+4. Prioritize recent, authoritative sources
+5. After gathering enough information, write a thorough Final Answer
+
+## Output format for your Final Answer:
+- Start with a clear, direct answer to the task
+- Include key facts, data points, and explanations
+- If technical content: include examples and how things work
+- Mention sources naturally (e.g. "According to recent research...")
+- Be comprehensive — the Writer will use your output to craft the final response
+- Minimum 200 words, maximum 800 words
+
+## Rules:
+- Never make up information — only use what tools return
+- If a tool returns no results, try a different search query
+- Always provide a Final Answer even if research is incomplete
+- Do not mention internal system details"""
 
 
 def _build_tools():
     tools = []
     if settings.tavily_api_key:
-        tools.append(
-            TavilySearch(
-                max_results  = settings.max_search_results,
-                search_depth = "advanced",
-            )
-        )
-    tools.append(
-        WikipediaQueryRun(
-            api_wrapper=WikipediaAPIWrapper(top_k_results=3, doc_content_chars_max=2000)
-        )
-    )
-    tools.append(
-        ArxivQueryRun(
-            api_wrapper=ArxivAPIWrapper(top_k_results=3, doc_content_chars_max=2000)
-        )
-    )
+        tools.append(TavilySearch(max_results=settings.max_search_results, search_depth="advanced"))
+    tools.append(WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper(top_k_results=3, doc_content_chars_max=3000)))
+    tools.append(ArxivQueryRun(api_wrapper=ArxivAPIWrapper(top_k_results=3, doc_content_chars_max=3000)))
     return tools
 
 
 async def researcher_node(state: AgentState) -> dict:
-    """LangGraph node — tool-calling researcher agent (langchain 1.x compatible)."""
     task = next(
-        (t for t in state["plan"]
-         if t["assigned_to"] == WorkerType.RESEARCHER and t["status"] == "pending"),
+        (t for t in state["plan"] if t["assigned_to"] == WorkerType.RESEARCHER and t["status"] == "pending"),
         None,
     )
     if task is None:
@@ -64,18 +69,18 @@ async def researcher_node(state: AgentState) -> dict:
 
     log.info("researcher.start", task_id=task["id"], run_id=state["run_id"])
 
-    llm, counter = build_llm_with_counter()
-    tools        = _build_tools()
-    tool_map     = {t.name: t for t in tools}
+    llm, counter   = build_llm_with_counter()
+    tools          = _build_tools()
+    tool_map       = {t.name: t for t in tools}
     llm_with_tools = llm.bind_tools(tools)
 
     messages = [
-        SystemMessage(content=(
-            "You are a research specialist. Use the available tools to gather "
-            "accurate, up-to-date information to answer the task. "
-            "After gathering enough information, provide a comprehensive Final Answer."
+        SystemMessage(content=RESEARCHER_SYSTEM),
+        HumanMessage(content=(
+            f"Overall user goal: {state['user_goal']}\n\n"
+            f"Your specific research task: {task['description']}\n\n"
+            "Use your tools to research this thoroughly, then provide your Final Answer."
         )),
-        HumanMessage(content=task["description"]),
     ]
 
     tool_calls_log = list(state["tool_calls"])
@@ -83,17 +88,14 @@ async def researcher_node(state: AgentState) -> dict:
     task_status    = "done"
 
     try:
-        # Agentic loop — up to 6 iterations
-        for _ in range(6):
+        for iteration in range(8):
             response = await llm_with_tools.ainvoke(messages)
             messages.append(response)
 
-            # No tool calls — LLM gave a final answer
             if not response.tool_calls:
                 output = response.content
                 break
 
-            # Execute each tool call
             for tc in response.tool_calls:
                 tool_name = tc["name"]
                 tool_args = tc["args"]
@@ -102,7 +104,7 @@ async def researcher_node(state: AgentState) -> dict:
                 if tool_name in tool_map:
                     try:
                         tool_result = await tool_map[tool_name].ainvoke(tool_args)
-                        result_str  = str(tool_result)[:1000]
+                        result_str  = str(tool_result)[:2000]
                         error_str   = None
                     except Exception as e:
                         result_str = f"Tool error: {e}"
@@ -111,34 +113,23 @@ async def researcher_node(state: AgentState) -> dict:
                     result_str = f"Tool '{tool_name}' not found."
                     error_str  = "Tool not found"
 
-                messages.append(
-                    ToolMessage(content=result_str, tool_call_id=tc["id"])
-                )
-                tool_calls_log.append(
-                    ToolCall(
-                        id         = tc["id"],
-                        tool_name  = tool_name,
-                        input      = tool_args,
-                        output     = result_str,
-                        error      = error_str,
-                        started_at = started,
-                        ended_at   = datetime.utcnow().isoformat(),
-                        tokens_used= 0,
-                    )
-                )
+                messages.append(ToolMessage(content=result_str, tool_call_id=tc["id"]))
+                tool_calls_log.append(ToolCall(
+                    id=tc["id"], tool_name=tool_name, input=tool_args,
+                    output=result_str, error=error_str,
+                    started_at=started, ended_at=datetime.utcnow().isoformat(), tokens_used=0,
+                ))
         else:
-            # Hit iteration limit — use last message content
-            output = messages[-1].content if hasattr(messages[-1], "content") else "Max iterations reached."
+            last = messages[-1]
+            output = last.content if hasattr(last, "content") else "Research complete — max iterations reached."
 
     except Exception as exc:
         log.error("researcher.error", error=str(exc), run_id=state["run_id"])
-        output      = f"Research failed: {exc}"
+        output      = f"Research encountered an error: {exc}"
         task_status = "failed"
 
-    # Update plan
     updated_plan = [
-        {**t, "status": task_status, "result": output}
-        if t["id"] == task["id"] else t
+        {**t, "status": task_status, "result": output} if t["id"] == task["id"] else t
         for t in state["plan"]
     ]
 
@@ -150,6 +141,9 @@ async def researcher_node(state: AgentState) -> dict:
         "estimated_cost_usd": prev["estimated_cost_usd"] + counter.estimated_cost_usd,
     }
 
+    # Show full output (not truncated)
+    preview = output[:1200] if len(output) > 1200 else output
+
     return {
         "plan":           updated_plan,
         "tool_calls":     tool_calls_log,
@@ -157,5 +151,5 @@ async def researcher_node(state: AgentState) -> dict:
         "token_usage":    usage,
         "status":         RunStatus.RUNNING,
         "updated_at":     datetime.utcnow().isoformat(),
-        "messages":       [AIMessage(content=f"[Researcher] Done.\n\n{output[:600]}")],
+        "messages":       [AIMessage(content=f"[Researcher] Research complete.\n\n{preview}")],
     }

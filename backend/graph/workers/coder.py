@@ -1,21 +1,6 @@
-﻿"""
-AgentFlow OS — Coder Worker
-=============================
-The most impressive agent in the system.
-
-Loop:
-  1. Write Python code to solve the assigned subtask
-  2. Execute it in a sandboxed subprocess (timeout enforced)
-  3. If it errors → send stderr + code back to LLM to fix
-  4. Repeat up to MAX_CODE_RETRIES times
-  5. Return the final output (or best-effort result with error context)
-
-The entire fix loop is self-contained inside this node. LangGraph
-only sees the final result — it doesn't need to re-route for each
-code retry. The retry loop in the graph is for quality, not for
-execution errors.
 """
-
+AgentFlow OS — Coder Worker (Beast Edition)
+"""
 from __future__ import annotations
 
 import asyncio
@@ -29,78 +14,106 @@ from pathlib import Path
 import structlog
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from backend.core.config import get_settings
-from backend.core.llm import build_llm_with_counter
-from backend.graph.state import AgentState, RunStatus, ToolCall, WorkerType
+from core.config import get_settings
+from core.llm import build_llm_with_counter
+from graph.state import AgentState, RunStatus, ToolCall, WorkerType
 
 log      = structlog.get_logger(__name__)
 settings = get_settings()
 
-MAX_CODE_RETRIES = 4   # inner loop — execution fix attempts
+MAX_CODE_RETRIES = 5
 
-# ─── Prompts ──────────────────────────────────────────────────────────────────
+SYSTEM_PROMPT = """You are an elite Python engineer inside AgentFlow OS.
 
-SYSTEM_PROMPT = """You are an expert Python engineer inside AgentFlow OS.
-Your job: write clean, correct Python 3.11 code to complete the given task.
+Your mission: write Python code that WORKS PERFECTLY on the first try.
 
-Rules:
-1. Output ONLY the Python code. No explanations, no markdown fences.
-2. Use only stdlib unless the task clearly requires a specific library.
-3. Print the final result to stdout — that is what gets captured.
-4. Handle errors gracefully inside your code.
-5. Keep code concise and readable.
-6. If given prior code + error, fix ONLY the root cause. Return the complete corrected script.
-7. NEVER use input() or any interactive prompts — code runs non-interactively.
-8. For calculator tasks: define the functions, then demonstrate them with hardcoded examples and print results.
-9. For any demo/example: use hardcoded values, print outputs clearly.
-10. Code must complete and exit on its own within 30 seconds."""
+## Code requirements:
+1. Output ONLY raw Python code — no markdown, no ```, no explanations
+2. Code must be self-contained and run without user input
+3. Always print results clearly to stdout — that's what the user sees
+4. Use only Python stdlib unless the task requires specific libraries
+5. Include proper error handling
+6. Make output human-readable and well-formatted
+7. Add brief comments explaining key steps
 
-FIX_PROMPT = """Your previous code raised an error.
+## Output formatting rules:
+- Print section headers: print("=" * 40)
+- Print labels before values: print(f"Result: {value}")  
+- For multiple results, print each on its own line
+- For calculations: show the formula AND the result
+- For algorithms: show input, process, output
 
-Code:
+## Common patterns:
+```
+# Calculator example:
+def add(a, b): return a + b
+print(f"5 + 3 = {add(5, 3)}")
+
+# Data processing:
+data = [1, 2, 3, 4, 5]
+print(f"Sum: {sum(data)}")
+print(f"Average: {sum(data)/len(data):.2f}")
+```
+
+## NEVER:
+- Use input() or any interactive prompts
+- Import libraries that aren't stdlib (unless task requires it)
+- Write infinite loops
+- Leave results unprinted"""
+
+FIX_PROMPT = """Your code failed. Fix it completely.
+
+## Original task:
+{task}
+
+## Failed code:
 ```python
 {code}
 ```
 
-Error:
+## Error:
 ```
 {error}
 ```
 
-Fix the error and return the complete corrected Python script.
-Output ONLY code — no explanations."""
+## Fix instructions:
+1. Identify the exact root cause
+2. Fix ONLY that issue
+3. Return the COMPLETE corrected script
+4. Ensure it prints clear output
 
+Return ONLY the corrected Python code — no explanations."""
 
-# ─── Sandbox execution ────────────────────────────────────────────────────────
+ENHANCE_PROMPT = """The code ran but produced no output. The user needs to see results.
+
+## Task:
+{task}
+
+## Code that produced no output:
+```python
+{code}
+```
+
+Add print statements to show the results clearly. Return the complete enhanced script."""
+
 
 def _execute_code_sync(code: str, timeout: int) -> tuple[str, str]:
-    """
-    Run code in a subprocess synchronously (Windows compatible).
-    Returns (stdout, stderr).
-    """
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".py", delete=False, encoding="utf-8"
-    ) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
         f.write(code)
         script_path = f.name
-
     try:
-        import subprocess as sp
-        result = sp.run(
+        result = subprocess.run(
             [sys.executable, script_path],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            encoding="utf-8",
-            errors="replace",
+            capture_output=True, text=True,
+            timeout=timeout, encoding="utf-8", errors="replace",
         )
         stdout = result.stdout.strip()
         stderr = result.stderr.strip()
         if result.returncode != 0 and not stderr:
             stderr = f"Process exited with code {result.returncode}"
         return stdout, stderr
-    except sp.TimeoutExpired:
-        return "", f"TimeoutError: code exceeded {timeout}s execution limit"
+    except subprocess.TimeoutExpired:
+        return "", f"TimeoutError: code exceeded {timeout}s limit"
     except Exception as e:
         return "", f"Execution error: {e}"
     finally:
@@ -108,140 +121,117 @@ def _execute_code_sync(code: str, timeout: int) -> tuple[str, str]:
 
 
 async def _execute_code(code: str, timeout: int) -> tuple[str, str]:
-    """
-    Run code in executor thread (non-blocking, Windows compatible).
-    """
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        None, _execute_code_sync, code, timeout
-    )
+    return await loop.run_in_executor(None, _execute_code_sync, code, timeout)
 
-
-# ─── Node function ────────────────────────────────────────────────────────────
 
 async def coder_node(state: AgentState) -> dict:
-    """LangGraph node — self-healing coder."""
-    # Find our assigned task
     task = next(
-        (t for t in state["plan"]
-         if t["assigned_to"] == WorkerType.CODER and t["status"] == "pending"),
+        (t for t in state["plan"] if t["assigned_to"] == WorkerType.CODER and t["status"] == "pending"),
         None,
     )
     if task is None:
         return {"updated_at": datetime.utcnow().isoformat()}
 
     log.info("coder.start", task_id=task["id"], run_id=state["run_id"])
-
     llm, counter = build_llm_with_counter()
 
-    # Inject context from other workers if available
-    context_snippets = []
-    for worker, output in state.get("worker_outputs", {}).items():
-        if output:
-            context_snippets.append(f"[{worker} output]\n{output[:800]}")
-    context_block = "\n\n".join(context_snippets)
+    # Inject context from researcher if available
+    context = ""
+    researcher_output = state.get("worker_outputs", {}).get("researcher", "")
+    if researcher_output:
+        context = f"\n\nContext from researcher:\n{researcher_output[:1000]}"
 
-    goal_msg = HumanMessage(
-        content=(
-            f"Task: {task['description']}\n\n"
-            + (f"Available context from other agents:\n{context_block}" if context_block else "")
-        )
-    )
+    initial_msg = HumanMessage(content=f"{task['description']}{context}")
+    messages    = [SystemMessage(content=SYSTEM_PROMPT), initial_msg]
 
-    # ── Inner fix loop ────────────────────────────────────────────────────────
-    messages     = [SystemMessage(content=SYSTEM_PROMPT), goal_msg]
+    tool_calls   = list(state["tool_calls"])
     current_code = ""
     last_output  = ""
     last_error   = ""
-    tool_calls   = list(state["tool_calls"])
+    success      = False
 
     for attempt in range(MAX_CODE_RETRIES + 1):
-        # Generate or fix code
         try:
             response     = await llm.ainvoke(messages)
             current_code = response.content.strip()
 
-            # Strip accidental fences
-            if current_code.startswith("```"):
-                lines        = current_code.splitlines()
+            # Strip fences
+            if "```" in current_code:
+                lines = current_code.splitlines()
                 current_code = "\n".join(
-                    l for l in lines
-                    if not l.startswith("```")
+                    l for l in lines if not l.strip().startswith("```")
                 ).strip()
+                if current_code.startswith("python"):
+                    current_code = current_code[6:].strip()
 
         except Exception as exc:
-            log.error("coder.llm_error", error=str(exc), attempt=attempt)
             last_error = str(exc)
+            log.error("coder.llm_error", error=str(exc), attempt=attempt)
             break
 
-        # Execute
-        started = datetime.utcnow().isoformat()
-        stdout, stderr = await _execute_code(
-            current_code, timeout=settings.code_exec_timeout_s
-        )
-        ended = datetime.utcnow().isoformat()
+        started        = datetime.utcnow().isoformat()
+        stdout, stderr = await _execute_code(current_code, timeout=settings.code_exec_timeout_s)
+        ended          = datetime.utcnow().isoformat()
 
-        tool_call = ToolCall(
-            id        = f"code_exec_{task['id']}_{attempt}",
-            tool_name = "code_executor",
-            input     = {"code": textwrap.shorten(current_code, 400)},
-            output    = stdout or None,
-            error     = stderr or None,
-            started_at= started,
-            ended_at  = ended,
-            tokens_used=0,
-        )
-        tool_calls.append(tool_call)
+        tool_calls.append(ToolCall(
+            id         = f"exec_{task['id']}_{attempt}",
+            tool_name  = "python_executor",
+            input      = {"code": textwrap.shorten(current_code, 500), "attempt": attempt},
+            output     = stdout or None,
+            error      = stderr or None,
+            started_at = started,
+            ended_at   = ended,
+            tokens_used= 0,
+        ))
 
-        log.info(
-            "coder.exec",
-            attempt=attempt,
-            has_error=bool(stderr),
-            run_id=state["run_id"],
-        )
+        log.info("coder.exec", attempt=attempt, success=not bool(stderr), run_id=state["run_id"])
 
         if not stderr:
-            # ✅ Success
-            last_output = stdout
+            if not stdout and attempt < MAX_CODE_RETRIES:
+                # Code ran but no output — ask LLM to add prints
+                messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(
+                    content=ENHANCE_PROMPT.format(task=task["description"], code=current_code)
+                )]
+                continue
+
+            last_output = stdout or "(code executed successfully — no output produced)"
             last_error  = ""
+            success     = True
             log.info("coder.success", attempt=attempt, run_id=state["run_id"])
             break
 
-        # ❌ Error — build fix prompt and continue
         last_error = stderr
-        fix_msg    = HumanMessage(
-            content=FIX_PROMPT.format(code=current_code, error=stderr)
-        )
-        messages = [SystemMessage(content=SYSTEM_PROMPT), fix_msg]
+        log.warning("coder.error", attempt=attempt, error=stderr[:200], run_id=state["run_id"])
 
-        if attempt == MAX_CODE_RETRIES:
-            log.warning(
-                "coder.max_retries",
-                attempts=attempt + 1,
-                run_id=state["run_id"],
-            )
+        if attempt < MAX_CODE_RETRIES:
+            messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(
+                content=FIX_PROMPT.format(
+                    task=task["description"], code=current_code, error=stderr
+                )
+            )]
 
-    # ── Build result ──────────────────────────────────────────────────────────
-    if last_error and not last_output:
+    # Build final result
+    if success:
         result = (
-            f"Code execution failed after {MAX_CODE_RETRIES + 1} attempts.\n"
-            f"Last error: {last_error}\n"
-            f"Last code attempted:\n{textwrap.shorten(current_code, 600)}"
+            f"✅ Code executed successfully after {attempt + 1} attempt(s).\n\n"
+            f"**Output:**\n```\n{last_output}\n```\n\n"
+            f"**Code:**\n```python\n{current_code}\n```"
+        )
+        task_status = "done"
+    else:
+        result = (
+            f"⚠️ Code execution failed after {MAX_CODE_RETRIES + 1} attempts.\n\n"
+            f"**Last error:** {last_error}\n\n"
+            f"**Last code:**\n```python\n{textwrap.shorten(current_code, 800)}\n```"
         )
         task_status = "failed"
-    else:
-        result      = last_output or "(code ran but produced no output)"
-        task_status = "done"
 
-    # Update the task in the plan
-    updated_plan = []
-    for t in state["plan"]:
-        if t["id"] == task["id"]:
-            updated_plan.append({**t, "status": task_status, "result": result})
-        else:
-            updated_plan.append(t)
+    updated_plan = [
+        {**t, "status": task_status, "result": result} if t["id"] == task["id"] else t
+        for t in state["plan"]
+    ]
 
-    # Merge token usage
     prev  = state["token_usage"]
     usage = {
         "prompt_tokens":      prev["prompt_tokens"]      + counter.prompt_tokens,
@@ -250,18 +240,14 @@ async def coder_node(state: AgentState) -> dict:
         "estimated_cost_usd": prev["estimated_cost_usd"] + counter.estimated_cost_usd,
     }
 
-    worker_outputs = {**state.get("worker_outputs", {}), "coder": result}
-
     return {
         "plan":           updated_plan,
         "tool_calls":     tool_calls,
-        "worker_outputs": worker_outputs,
+        "worker_outputs": {**state.get("worker_outputs", {}), "coder": result},
         "token_usage":    usage,
         "status":         RunStatus.RUNNING,
         "updated_at":     datetime.utcnow().isoformat(),
-        "messages": [
-            AIMessage(
-                content=f"[Coder] Task complete after {attempt + 1} attempt(s).\n\nOutput:\n{result[:500]}"
-            )
-        ],
+        "messages": [AIMessage(content=(
+            f"[Coder] {'✅ Success' if success else '⚠️ Failed'} after {attempt + 1} attempt(s).\n\n{last_output[:600] if success else last_error[:300]}"
+        ))],
     }
