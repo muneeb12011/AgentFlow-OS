@@ -840,7 +840,7 @@ export default function App() {
   }
 
   if (page === "dashboard") {
-    return <Dashboard />;
+    return <Dashboard onSignOut={() => setPage("auth")} />;
   }
 
   if (page === "docs") {
