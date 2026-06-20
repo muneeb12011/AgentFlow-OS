@@ -3,6 +3,7 @@ AgentFlow OS — FastAPI Application (Beast Edition)
 """
 from __future__ import annotations
 
+import httpx
 import json
 import os
 import uuid
@@ -17,8 +18,6 @@ from fastapi.responses import StreamingResponse
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
-from google.oauth2 import id_token as google_id_token
-from google.auth.transport import requests as google_requests
 
 from core.config import get_settings
 from graph.pipeline import build_graph_instance
@@ -142,7 +141,7 @@ class LoginRequest(BaseModel):
     password: str
 
 class GoogleAuthRequest(BaseModel):
-    token: str  # Google ID token from frontend
+    token: str  # Google access token from frontend
 
 class TokenRequest(BaseModel):
     email:     str
@@ -225,7 +224,6 @@ async def register(body: RegisterRequest):
     if len(body.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
 
-    # Reload from file to get latest (handles concurrent instances)
     _users = _load_users()
 
     if email in _users:
@@ -279,7 +277,6 @@ async def login(body: LoginRequest):
     if not body.password:
         raise HTTPException(status_code=400, detail="Password is required.")
 
-    # Reload from file
     _users = _load_users()
     user   = _users.get(email)
 
@@ -318,15 +315,22 @@ async def login(body: LoginRequest):
 
 @app.post("/api/auth/google")
 async def google_auth(body: GoogleAuthRequest):
-    """Verify a Google ID token from the frontend and issue our own JWT."""
+    """Verify a Google access token via tokeninfo endpoint and issue our own JWT."""
     global _users
 
     try:
-        idinfo = google_id_token.verify_oauth2_token(
-            body.token,
-            google_requests.Request(),
-            settings.google_client_id,
-        )
+        async with httpx.AsyncClient() as client:
+            r = await client.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"access_token": body.token},
+            )
+        # Debug logs — remove after Google auth is confirmed working
+        log.info("tokeninfo_status", status=r.status_code)
+        log.info("tokeninfo_response", body=r.text)
+
+        if r.status_code != 200:
+            raise ValueError(r.text)
+        idinfo = r.json()
     except Exception as e:
         log.warning("google_auth.invalid_token", error=str(e))
         raise HTTPException(status_code=401, detail="Invalid Google token.")
@@ -335,7 +339,6 @@ async def google_auth(body: GoogleAuthRequest):
     name       = idinfo.get("name", email.split("@")[0])
     google_sub = idinfo["sub"]
 
-    # Reload from file to get latest (handles concurrent instances)
     _users = _load_users()
     user = _users.get(email)
 
