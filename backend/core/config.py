@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # ── Security ──────────────────────────────────────────────────────────────
     jwt_secret_key:   str = "change-me-in-production-use-openssl-rand-hex-32"
     jwt_algorithm:    str = "HS256"
-    jwt_expire_mins:  int = 60 * 24    # 24 hours
+    jwt_expire_mins:  int = 60 * 24 * 7  # 7 days
 
     # ── LLM — Groq ────────────────────────────────────────────────────────────
     groq_api_key:      str = ""
@@ -64,6 +64,9 @@ class Settings(BaseSettings):
 
     # ── CORS ──────────────────────────────────────────────────────────────────
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+
+    # ── Google OAuth ──────────────────────────────────────────────────────────
+    google_client_id: str = ""
 
 
 @lru_cache

@@ -22,6 +22,7 @@ interface HistoryState {
   activeChatId: string | null;
   createChat: (userId: string, firstMessage: string) => string;
   addMessage: (chatId: string, message: Message) => void;
+  replaceOrAddMessage: (chatId: string, message: Message) => void;
   setActiveChat: (chatId: string | null) => void;
   deleteChat: (chatId: string) => void;
   clearAll: (userId: string) => void;
@@ -61,6 +62,31 @@ export const useHistory = create<HistoryState>()(
         }));
       },
 
+      // Replace the last message from the same node, or append if none exists.
+      // This prevents coder/critic from showing multiple times during retries.
+      replaceOrAddMessage: (chatId, message) => {
+        set((s) => ({
+          chats: s.chats.map((c) => {
+            if (c.id !== chatId) return c;
+            const msgs = [...c.messages];
+            // Find last message from same node
+            let lastIdx = -1;
+            for (let i = msgs.length - 1; i >= 0; i--) {
+              if (msgs[i].node === message.node && msgs[i].role === "agent") {
+                lastIdx = i;
+                break;
+              }
+            }
+            if (lastIdx !== -1) {
+              msgs[lastIdx] = message; // replace in-place
+            } else {
+              msgs.push(message); // append if first from this node
+            }
+            return { ...c, messages: msgs, updatedAt: new Date().toISOString() };
+          }),
+        }));
+      },
+
       setActiveChat: (chatId) => set({ activeChatId: chatId }),
 
       deleteChat: (chatId) => {
@@ -86,7 +112,6 @@ export const useHistory = create<HistoryState>()(
     {
       name:    "agentflow-history",
       storage: createJSONStorage(() => localStorage),
-      // Only persist chats and activeChatId
       partialize: (state) => ({
         chats:        state.chats,
         activeChatId: state.activeChatId,
