@@ -37,7 +37,7 @@
 
 AgentFlow OS is a multi-agent pipeline built on a real LangGraph `StateGraph`, not a single prompt with extra steps bolted on. A goal comes in, a **Supervisor** decides whether it's answerable as-is or needs clarification first, breaks it into subtasks, hands each one to a specialist worker, sends the combined output to a **Critic** for a numeric quality score, and only lets the **Writer** produce the final answer once that bar is cleared (or retries are exhausted).
 
-Every worker in this system exists because a specific failure mode was observed and fixed — not because a tutorial said to include it. The comments in the code explain *why* each safeguard exists, not just what it does; that history is preserved deliberately so the reasoning isn't lost.
+Every worker in this system exists because a specific failure mode was observed and fixed not because a tutorial said to include it. The comments in the code explain *why* each safeguard exists, not just what it does; that history is preserved deliberately so the reasoning isn't lost.
 
 <br/>
 
