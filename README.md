@@ -97,7 +97,7 @@ Every worker in this system exists because a specific failure mode was observed 
 
 **The Researcher survives being cut off.** Tool calls and the overall research loop both carry hard timeouts, and partial findings are appended to a list held by reference in the caller — so a timeout mid-loop doesn't discard three successful search rounds, and the fallback text shown to the user is a cleaned, human-readable summary, not the raw `{tool_name} query={...} -> {...}` payload.
 
-**The Writer knows when it's being honest.** If the pipeline reaches the Writer only because retries ran out — not because the Critic actually approved the output — the final answer is prefixed with a plain quality caveat instead of being presented with the same confidence as a passing result.
+**The Writer knows when it's being honest.** If the pipeline reaches the Writer only because retries ran out — not because the Critic actually approved the output the final answer is prefixed with a plain quality caveat instead of being presented with the same confidence as a passing result.
 
 <br/>
 
