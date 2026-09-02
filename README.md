@@ -37,7 +37,7 @@
 
 AgentFlow OS is a multi-agent pipeline built on a real LangGraph `StateGraph`, not a single prompt with extra steps bolted on. A goal comes in, a **Supervisor** decides whether it's answerable as-is or needs clarification first, breaks it into subtasks, hands each one to a specialist worker, sends the combined output to a **Critic** for a numeric quality score, and only lets the **Writer** produce the final answer once that bar is cleared (or retries are exhausted).
 
-Every worker in this system exists because a specific failure mode was observed and fixed — not because a tutorial said to include it. The comments in the code explain *why* each safeguard exists, not just what it does; that history is preserved deliberately so the reasoning isn't lost.
+Every worker in this system exists because a specific failure mode was observed and fixed not because a tutorial said to include it. The comments in the code explain *why* each safeguard exists, not just what it does; that history is preserved deliberately so the reasoning isn't lost.
 
 <br/>
 
@@ -91,7 +91,7 @@ Every worker in this system exists because a specific failure mode was observed 
 
 **File-aware routing is deterministic, not vibes-based.** Code pasted into the chat is saved as `pasted-code-*.txt` by the frontend; the Supervisor force-routes those to the Coder regardless of what the planning LLM decides, because letting the LLM route by file extension alone previously sent real source code to the Researcher, which has no file content in its context and just web-searched the filename.
 
-**The Coder has two distinct modes**, not one. Data-analysis tasks get the full write-execute-fix loop with a deterministic safety net (`_force_inject_file_data`) that guarantees the *actual* uploaded content reaches the executed script regardless of what the LLM wrote. Code-review tasks ("review this and tell me if it's good") skip code generation and execution entirely — running someone's React component through a Python interpreter was never going to produce a review.
+**The Coder has two distinct modes**, not one. Data-analysis tasks get the full write-execute-fix loop with a deterministic safety net (`_force_inject_file_data`) that guarantees the *actual* uploaded content reaches the executed script regardless of what the LLM wrote. Code-review tasks ("review this and tell me if it's good") skip code generation and execution entirely running someone's React component through a Python interpreter was never going to produce a review.
 
 **Every LLM call goes through a resilient wrapper**, not a bare SDK call: per-call timeouts, automatic fallback from `openai/gpt-oss-20b` to `openai/gpt-oss-120b`, a circuit breaker for daily quota exhaustion, and prompt-trimming tuned for the smaller fallback model.
 
